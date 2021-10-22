@@ -71,6 +71,12 @@ void readFifo(int* fd_rd){
 	}
 	else{
 		printf("Fifo opened for reading...\n");
+		char buffer[20] = "....................";
+		/*while(buffer[5] == '.'){
+			read(*fd_rd, buffer, 10);
+		}*/
+		read(*fd_rd, buffer, 10);
+		printf("The message is: %s\n", buffer);
 	}
 }
 

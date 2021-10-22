@@ -71,6 +71,7 @@ void writeFifo(int* fd_wr){
 	}
 	else{
 		printf("Fifo opened for writing...\n");
+		write(*fd_wr, "Test text", 10);
 	}
 }
 
