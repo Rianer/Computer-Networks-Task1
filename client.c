@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <stdbool.h>
 #include <string.h>
+#include <sys/socket.h>
 
 bool clientActive = true;
 bool sendingRequest = false;

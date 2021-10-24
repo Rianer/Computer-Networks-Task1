@@ -8,7 +8,7 @@
 #include <fcntl.h>
 #include <stdbool.h>
 #include <string.h>
-
+#include <sys/socket.h>
 
 
 bool serverRunning = true;
@@ -23,12 +23,13 @@ const char* truncateSection();
 const char* prepareForSending();
 
 bool processClientJoin();
-bool checkCommand(const char* command, const char* input);
+bool checkCommand();
 
 
 
-void waitForClientJoin(){
+bool waitForClientJoin(){
 
+	bool status = false;
 
 	printf("Server online, waiting for client to join...\n\n");
 
@@ -70,6 +71,7 @@ void waitForClientJoin(){
     	read(fd2[0], response, 100);
     	close(fd2[0]);
 
+    	status = strcmp(response, "User name accepted!") == 0;
     	//strcpy(response, prepareForSending(response));
     	//printf("%s\n", response);
 
@@ -87,6 +89,8 @@ void waitForClientJoin(){
 		}
 
 		close(fd);
+
+		return status;
     }
     else{ //child
     	close(fd1[1]);
@@ -163,13 +167,15 @@ bool processClientJoin(const char* userName){
 	}
 
 	if(userFound){
-		printf("The user has been found!\n\n");
+		
 		userOnline = true;
+		if(userOnline) printf("The user has been found!\n\n");
 		return true;
 	} 
 	if(userInvalid) {
 		printf("The username is invalid!\n\n");
 		userOnline = false;
+		if(!userOnline) printf("The username is invalid!\n\n");
 		return false;
 	}
 	close(fd);
@@ -256,6 +262,114 @@ bool checkCommand(const char* command, const char* input){
 	return true;
 }
 
+void waitForCommands(){
+
+
+	
+	
+
+	//processClientJoin(userName);
+	int fd1[2], fd2[2];
+
+	if (pipe(fd1)==-1)
+    {
+        fprintf(stderr, "Pipe Failed" );
+        exit(-1);
+    }
+    if (pipe(fd2)==-1)
+    {
+        fprintf(stderr, "Pipe Failed" );
+        exit(-1);
+    }
+
+	int pid, rv;
+	if((pid = fork()) < 0){
+    	perror("Fork failed");
+    	exit(-1);
+    }
+    else if(pid > 0){ //parrent
+
+    	close(fd1[0]);
+
+    	const char* request = readFromFile("myFifo2");
+		printf("Received from client: %s\n", request);
+
+    	write(fd1[1], request, strlen(request)+1);
+    	close(fd1[1]);
+
+    	wait(&rv);
+
+    	close(fd2[1]);
+    	char* response = malloc(sizeof(char) * 100);
+    	read(fd2[0], response, 100);
+    	close(fd2[0]);
+
+    	status = strcmp(response, "User name accepted!") == 0;
+    	//strcpy(response, prepareForSending(response));
+    	//printf("%s\n", response);
+
+    	int fd;
+    	if( (fd = open("myFifo", O_WRONLY)) == -1 ){
+			perror("Open FIFO");
+			exit(-1);
+		}
+		else{
+
+			printf("Fifo opened for writing...\n");
+			strcpy(response, prepareForSending(response));
+			write(fd, response, strlen(response) + 1);
+			printf("Wrote: %s\n",response);
+			//printf("Information sent: %s %ld \n", inputLine, strlen(inputLine));
+
+		}
+
+		close(fd);
+
+		return status;
+    }
+    else{ //child
+    	close(fd1[1]);
+    	char* input = malloc(sizeof(char) * 100);
+    	read(fd1[0],input,100);
+    	close(fd1[0]);
+    	char* output = malloc(sizeof(char) * 100);
+
+    	if(checkCommand("login : ", request)){
+    		if(processClientJoin(input)){
+    			strcpy(output, "User name accepted!");
+    		}
+    		else{
+    			strcpy(output, "User name invalid!");
+    		}
+    	}
+    	else if(checkCommand("get-logged-users", request)){
+
+    	}
+    	else if(checkCommand("get-proc-info : ", request)){
+
+    	}
+    	else if(checkCommand("logout", request)){
+    		
+    	}
+    	else if(checkCommand("quit", request)){
+    		
+    	}
+    	else{
+    		strcpy(output, "Command invalid!");
+    	}
+
+    	
+
+    	close(fd2[0]);
+
+    	write(fd2[1],output,strlen(output)+1);
+    	close(fd2[1]);
+    	exit(rv);
+    }
+}
+
+
+
 int main(){
 
 	if( mkfifo("myFifo2", 0666) == -1 ){ //creating a FIFO File
@@ -279,11 +393,14 @@ int main(){
 	while(serverRunning){ //Phase 2: At least one client is online, serving the client
 
 		if(!userOnline){ //Waiting for an input in the FIFO
-			waitForClientJoin();
-			if(userOnline) printf("userOnline\n");
+			if(waitForClientJoin()){
+				printf("User is online\n");
+				userOnline = true;
+			}
+			
 		}
-		if(userOnline){ //Processing the request
-
+		else{
+			
 		}
 		
 	}
