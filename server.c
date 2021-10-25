@@ -305,7 +305,11 @@ void waitForCommands(bool* userOnline, bool* serverRunning){
     	read(sockp[1], response, 1024);
     	close(sockp[1]);
     	*userOnline = strcmp(response, "Client logged out!") != 0;
-    	*serverRunning = strcmp(response, "Quitting!") != 0;
+    	//*serverRunning = strcmp(response, "Quitting!") != 0;
+    	if(strcmp(response, "Quitting!") == 0){
+    		userOnline = false;
+    		serverRunning = false;
+    	}
     	int fd;
     	if( (fd = open("myFifo", O_WRONLY)) == -1 ){
 			perror("Open FIFO");
