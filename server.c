@@ -19,20 +19,26 @@ bool userOnline = false;
 
 void stopServer();
 void readFifo();
+void resetParser(int fd);
 
 const char* readFromFile();
 const char* truncateSection();
 const char* prepareForSending();
 const char* getTime(struct utmp* log);
 const char* getLoggedUsers();
+const char* getLine(int fd);
+const char* searchPidDetails(const char* path, const char* fields[], int n);
+const char* preparePid(const char* input);
+const char* makePath(const char* part1, const char* part2, const char* part3);
 
 
 bool processClientJoin();
 bool checkCommand();
+bool checkFileExists(const char* path);
+bool checkPidFormat(const char* pid);
 
 
-
-bool waitForClientJoin(){
+bool waitForClientJoin(bool* serverRunning){
 
 	bool status = false;
 
@@ -77,6 +83,7 @@ bool waitForClientJoin(){
     	close(fd2[0]);
 
     	status = strcmp(response, "User name accepted!") == 0;
+    	*serverRunning = strcmp(response, "Quitting!") != 0;
     	//strcpy(response, prepareForSending(response));
     	//printf("%s\n", response);
 
@@ -111,6 +118,9 @@ bool waitForClientJoin(){
     		else{
     			strcpy(output, "User name invalid!");
     		}
+    	}
+    	else if(checkCommand("quit", request)){
+    		strcpy(output, "Quitting!");
     	}
     	else{
     		strcpy(output, "Command invalid!");
@@ -267,7 +277,7 @@ bool checkCommand(const char* command, const char* input){
 	return true;
 }
 
-void waitForCommands(bool* userOnline){
+void waitForCommands(bool* userOnline, bool* serverRunning){
 
 	//processClientJoin(userName);
 	int sockp[2];
@@ -295,7 +305,7 @@ void waitForCommands(bool* userOnline){
     	read(sockp[1], response, 1024);
     	close(sockp[1]);
     	*userOnline = strcmp(response, "Client logged out!") != 0;
-
+    	*serverRunning = strcmp(response, "Quitting!") != 0;
     	int fd;
     	if( (fd = open("myFifo", O_WRONLY)) == -1 ){
 			perror("Open FIFO");
@@ -320,19 +330,47 @@ void waitForCommands(bool* userOnline){
     	char* output = malloc(sizeof(char) * 1024);
 
     	if(checkCommand("login : ", input)){
-    		const char* userName = truncateSection(input, "login : ");
+    		/*const char* userName = truncateSection(input, "login : ");
     		if(processClientJoin(userName)){
     			strcpy(output, "User name accepted!");
     		}
     		else{
     			strcpy(output, "User name invalid!");
-    		}
+    		}*/
+    		strcpy(output, "Client already logged in...");
     	}
     	else if(checkCommand("get-logged-users", input)){
     		strcpy(output, getLoggedUsers());
     	}
     	else if(checkCommand("get-proc-info : ", input)){
-    		strcpy(output, "get-proc-info : valid!");
+    		const char* check[5] = {"Name:", "State:", "Ppid:", "Uid:", "Vmsize:"};
+    		//strcpy(output, "get-proc-info : valid!");
+
+    		const char* aux = preparePid(input);
+    		printf("Prepared Pid: %s \n\n", aux);
+
+    		if(checkPidFormat(aux)){
+
+    			printf("Making path... \n\n");
+    			const char* pidPath = makePath("/proc/", aux, "/status");
+    			printf("Pid path: %s \n\n", pidPath);
+
+    			if(checkFileExists(pidPath)){
+    				strcpy(output, searchPidDetails(pidPath, check, 5));
+    			}
+    			else{
+    				strcpy(output, "File does not exist!");
+    			}
+
+    		}
+    		else{
+
+    			strcpy(output, "Pid format invalid!");
+
+    		}
+
+    		//strcpy(output, searchPidDetails("/proc/21/status", check, 5));
+
     	}
     	else if(checkCommand("logout", input)){
     		strcpy(output, "Client logged out!");
@@ -388,6 +426,102 @@ const char* getTime(struct utmp* log){
 
 }
 
+const char* searchPidDetails(const char* path, const char* fields[], int n){
+
+	int fd;
+	fd = open(path, O_RDONLY);
+	if(fd == -1) exit(-1);
+
+	int lines_searched = 0;
+	bool found = false;
+	char* result = malloc(sizeof(char) * 1024);
+	*(result) = '\0';
+
+	for(int i = 0; i < n; i++){
+			char* result_buf = malloc(sizeof(char) * 128);
+			found = false;
+			lines_searched = 0;
+
+			while(!found && lines_searched < 20){
+				const char* buf_str = getLine(fd);
+				found = checkCommand(fields[i], buf_str);
+				if(found){
+					strcpy(result_buf, buf_str);
+				}
+				lines_searched++;
+			}
+
+			if(found){
+				strcat(result, result_buf);
+			}
+			else{
+				strcat(result, fields[i]);
+				strcat(result, " Not available");
+			}
+
+			strcat(result, "\n");
+			resetParser(fd);
+
+	}
+
+	return result;
+}
+
+void resetParser(int fd){
+	lseek(fd, 0, SEEK_SET);
+}
+
+const char* getLine(int fd){
+	char* line = malloc(sizeof(char)*1024);
+	*line = '\0';
+	char parser;
+	int len = 0;
+	int r_stat;
+	r_stat = read(fd, &parser, sizeof(char));
+	while(parser != '\n' && r_stat != -1){
+		*(line+len) = parser;
+		len++;
+		r_stat = read(fd, &parser, sizeof(char));
+	}
+	return line;
+}
+
+const char* makePath(const char* part1, const char* part2, const char* part3){
+	char* result = malloc(sizeof(char)*1024);
+	strcpy(result, part1);
+	strcat(result, part2);
+	strcat(result, part3);
+
+	return result;
+}
+
+const char* preparePid(const char* input){
+	char* result = malloc(sizeof(char)*1024);
+	strcpy(result, truncateSection(input, "get-proc-info : "));
+	return result;
+}
+
+bool checkPidFormat(const char* pid){
+	int len = strlen(pid);
+	char aux;
+	for(int i = 0; i < len; i++){
+		aux = pid[i];
+		if(aux != '0' && aux != '1' && aux != '2' && aux != '3' && aux != '4' && aux != '5' && aux != '6' &&
+			aux != '7' && aux != '8' && aux != '9') 
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool checkFileExists(const char* path){
+	if(access(path, F_OK) == 0) return true;
+	return false;
+}
+
+
+
 int main(){
 
 	if( mkfifo("myFifo2", 0666) == -1 ){ //creating a FIFO File
@@ -411,14 +545,14 @@ int main(){
 	while(serverRunning){ //Phase 2: At least one client is online, serving the client
 
 		if(!userOnline){ //Waiting for an input in the FIFO
-			if(waitForClientJoin()){
+			if(waitForClientJoin(&serverRunning)){
 				printf("User is online\n");
 				userOnline = true;
 			}
 			
 		}
 		else{
-			waitForCommands(&userOnline);
+			waitForCommands(&userOnline, &serverRunning);
 		}
 		
 	}

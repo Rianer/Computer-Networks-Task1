@@ -43,7 +43,7 @@ void sendConsoleInput(){
 	close(fd);
 }
 
-void getServerResponse(){
+void getServerResponse(bool* clientActive){
 	/*int fd;
 	fd = open("myFifo2", O_RDONLY);
 	char* getResponse = malloc(sizeof(char) * 100);
@@ -54,6 +54,10 @@ void getServerResponse(){
 	printf("R: %s\n", getResponse);*/
 
 	const char* serverResponse = readFromFile("myFifo");
+
+	if(strcmp(serverResponse,"9 Quitting!") == 0){
+		*clientActive = false;
+	}
 
 	printf("%s\n", serverResponse);
 
@@ -117,13 +121,17 @@ int main(){
 		}
 		if(receivingAnswer){
 			printf("Server feedback: ");
-			getServerResponse();
-			sendingRequest = true;
-			receivingAnswer = false;
+			getServerResponse(&clientActive);
+			if(clientActive){
+				sendingRequest = true;
+				receivingAnswer = false;
+			}
+			else{
+				printf("Disconnecting...");
+			}
 			printf("\n\n");
 		}
 	}
-	sendConsoleInput();
 
 	printf("Client disconnected!\n");
 	return 0;
