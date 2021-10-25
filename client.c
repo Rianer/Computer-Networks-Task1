@@ -65,8 +65,9 @@ const char* readFromFile(const char* path){
 	char aux = '.';
 	char *buffer = malloc(sizeof(char)*(char_num + 1));
 	int fd = open(path, O_RDONLY);
-	while(aux != '\n' && aux != EOF){
-		read(fd,&aux,1);
+	read(fd,&aux,1);
+	while(aux != '}' && aux != EOF){
+		
 		//printf("%c_",aux);
 		
 		if(counter >= char_num){
@@ -80,10 +81,11 @@ const char* readFromFile(const char* path){
 
 			}
 		}
-		if(aux != '\n') {
-			*(buffer+counter) = aux;
-			counter++;
-		}
+		
+		*(buffer+counter) = aux;
+		counter++;
+		
+		read(fd,&aux,1);
 	}
 	close(fd);
 	return buffer;

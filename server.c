@@ -9,7 +9,9 @@
 #include <stdbool.h>
 #include <string.h>
 #include <sys/socket.h>
-
+#include <utmp.h>
+#include <sys/time.h>
+#include <time.h>
 
 bool serverRunning = true;
 bool userOnline = false;
@@ -21,6 +23,9 @@ void readFifo();
 const char* readFromFile();
 const char* truncateSection();
 const char* prepareForSending();
+const char* getTime(struct utmp* log);
+const char* getLoggedUsers();
+
 
 bool processClientJoin();
 bool checkCommand();
@@ -250,7 +255,7 @@ const char* prepareForSending(const char* string){
 	strcpy(endResult, buffer);
 	strcat(endResult, " ");
 	strcat(endResult, string);
-	strcat(endResult, "\n");
+	strcat(endResult, "}");
 	return endResult;
 }
 
@@ -262,7 +267,7 @@ bool checkCommand(const char* command, const char* input){
 	return true;
 }
 
-void waitForCommands(){
+void waitForCommands(bool* userOnline){
 
 	//processClientJoin(userName);
 	int sockp[2];
@@ -286,9 +291,11 @@ void waitForCommands(){
 
     	write(sockp[1], request, strlen(request)+1);
 
-    	char* response = malloc(sizeof(char) * 100);
-    	read(sockp[1], response, 100);
+    	char* response = malloc(sizeof(char) * 1024);
+    	read(sockp[1], response, 1024);
     	close(sockp[1]);
+    	*userOnline = strcmp(response, "Client logged out!") != 0;
+
     	int fd;
     	if( (fd = open("myFifo", O_WRONLY)) == -1 ){
 			perror("Open FIFO");
@@ -308,9 +315,9 @@ void waitForCommands(){
     }
     else{ //child
     	close(sockp[1]);
-    	char* input = malloc(sizeof(char) * 100);
-    	read(sockp[0],input,100);
-    	char* output = malloc(sizeof(char) * 100);
+    	char* input = malloc(sizeof(char) * 200);
+    	read(sockp[0],input,200);
+    	char* output = malloc(sizeof(char) * 1024);
 
     	if(checkCommand("login : ", input)){
     		const char* userName = truncateSection(input, "login : ");
@@ -322,16 +329,16 @@ void waitForCommands(){
     		}
     	}
     	else if(checkCommand("get-logged-users", input)){
-    		strcpy(output, "get-logged-users valid!");
+    		strcpy(output, getLoggedUsers());
     	}
     	else if(checkCommand("get-proc-info : ", input)){
     		strcpy(output, "get-proc-info : valid!");
     	}
     	else if(checkCommand("logout", input)){
-    		strcpy(output, "logout valid!");
+    		strcpy(output, "Client logged out!");
     	}
     	else if(checkCommand("quit", input)){
-    		strcpy(output, "quit");
+    		strcpy(output, "Quitting!");
     	}
     	else{
     		strcpy(output, "Command invalid!");
@@ -343,7 +350,43 @@ void waitForCommands(){
     }
 }
 
+const char* getLoggedUsers(){
+	char* result = malloc(sizeof(char) * 1024);
 
+	result[0] = '\0';
+	struct utmp* log;
+	while((log = getutent()) != NULL){
+		char* buffer = malloc(sizeof(char) * 100);
+		strcpy(buffer, "Username: ");
+		strcat(buffer, log->ut_user);
+		strcat(buffer, ", Hostname for remote log in: ");
+		strcat(buffer, log->ut_host);
+		strcat(buffer, ", Time entry was made: ");
+		strcat(buffer, getTime(log));
+
+		strcat(buffer, ";\n");
+
+		strcat(result, buffer);
+	}
+
+	return result;
+}
+
+const char* getTime(struct utmp* log){
+	
+	//Cod luat de pe Stackoverflow
+	time_t nowtime;
+	struct tm *nowtm;
+	char* tmbuf = malloc(sizeof(char) * 64);
+	
+	nowtime = log->ut_tv.tv_sec;
+	nowtm = localtime(&nowtime);
+	strftime(tmbuf, 64, "%Y-%m-%d %H:%M:%S", nowtm);
+	return(tmbuf);
+
+	//Sursa cod: https://stackoverflow.com/questions/2408976/struct-timeval-to-printable-format
+
+}
 
 int main(){
 
@@ -375,7 +418,7 @@ int main(){
 			
 		}
 		else{
-			waitForCommands();
+			waitForCommands(&userOnline);
 		}
 		
 	}
