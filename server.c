@@ -264,50 +264,31 @@ bool checkCommand(const char* command, const char* input){
 
 void waitForCommands(){
 
-
-	
-	
-
 	//processClientJoin(userName);
-	int fd1[2], fd2[2];
+	int sockp[2];
 
-	if (pipe(fd1)==-1)
-    {
-        fprintf(stderr, "Pipe Failed" );
-        exit(-1);
-    }
-    if (pipe(fd2)==-1)
-    {
-        fprintf(stderr, "Pipe Failed" );
-        exit(-1);
+	if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockp) < 0) { 
+      perror("Socketpair"); 
+      exit(1); 
     }
 
-	int pid, rv;
+	int pid;
 	if((pid = fork()) < 0){
     	perror("Fork failed");
     	exit(-1);
     }
     else if(pid > 0){ //parrent
 
-    	close(fd1[0]);
+    	close(sockp[0]);
 
     	const char* request = readFromFile("myFifo2");
 		printf("Received from client: %s\n", request);
 
-    	write(fd1[1], request, strlen(request)+1);
-    	close(fd1[1]);
+    	write(sockp[1], request, strlen(request)+1);
 
-    	wait(&rv);
-
-    	close(fd2[1]);
     	char* response = malloc(sizeof(char) * 100);
-    	read(fd2[0], response, 100);
-    	close(fd2[0]);
-
-    	status = strcmp(response, "User name accepted!") == 0;
-    	//strcpy(response, prepareForSending(response));
-    	//printf("%s\n", response);
-
+    	read(sockp[1], response, 100);
+    	close(sockp[1]);
     	int fd;
     	if( (fd = open("myFifo", O_WRONLY)) == -1 ){
 			perror("Open FIFO");
@@ -324,47 +305,41 @@ void waitForCommands(){
 		}
 
 		close(fd);
-
-		return status;
     }
     else{ //child
-    	close(fd1[1]);
+    	close(sockp[1]);
     	char* input = malloc(sizeof(char) * 100);
-    	read(fd1[0],input,100);
-    	close(fd1[0]);
+    	read(sockp[0],input,100);
     	char* output = malloc(sizeof(char) * 100);
 
-    	if(checkCommand("login : ", request)){
-    		if(processClientJoin(input)){
+    	if(checkCommand("login : ", input)){
+    		const char* userName = truncateSection(input, "login : ");
+    		if(processClientJoin(userName)){
     			strcpy(output, "User name accepted!");
     		}
     		else{
     			strcpy(output, "User name invalid!");
     		}
     	}
-    	else if(checkCommand("get-logged-users", request)){
-
+    	else if(checkCommand("get-logged-users", input)){
+    		strcpy(output, "get-logged-users valid!");
     	}
-    	else if(checkCommand("get-proc-info : ", request)){
-
+    	else if(checkCommand("get-proc-info : ", input)){
+    		strcpy(output, "get-proc-info : valid!");
     	}
-    	else if(checkCommand("logout", request)){
-    		
+    	else if(checkCommand("logout", input)){
+    		strcpy(output, "logout valid!");
     	}
-    	else if(checkCommand("quit", request)){
-    		
+    	else if(checkCommand("quit", input)){
+    		strcpy(output, "quit");
     	}
     	else{
     		strcpy(output, "Command invalid!");
     	}
 
-    	
-
-    	close(fd2[0]);
-
-    	write(fd2[1],output,strlen(output)+1);
-    	close(fd2[1]);
-    	exit(rv);
+    	write(sockp[0],output,strlen(output)+1);
+    	close(sockp[0]);
+    	exit(0);
     }
 }
 
@@ -400,7 +375,7 @@ int main(){
 			
 		}
 		else{
-			
+			waitForCommands();
 		}
 		
 	}
